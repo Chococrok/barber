@@ -1,3 +1,4 @@
+const parser = require('xml2json');
 const promisify = require('util').promisify;
 const fs = require('fs');
 const os = require('os');
@@ -89,9 +90,15 @@ const toMustache = function (contents) {
 
         contents.forEach(content => {
 
+            // removing comments
+            content = content.replace(/<!--.*-->/gm, ``);
+            
             content = content.replace(/<(.*)>([^<>]*)(<\/\1>)/gm, '{{#$1}}<$1>{{$1}}$3{{/$1}}');
             content = content.replace(/^(\s*)<(?!!--)([^<>/]*)>[^<]*$/gm, `$1{{#$2}}${os.EOL}$1<$2>`);
             content = content.replace(/^(\s*)<\/([^<>/]*)>[^<\n]*$/gm, `$1</$2>${os.EOL}$1{{/$2}}`);
+
+            // removing blank line
+            content = content.replace(/(\n|\r|\r\n)\s*\n/gm,"\n");
 
             resultContents.push(content);
         })
@@ -102,37 +109,15 @@ const toMustache = function (contents) {
     }
 }
 
-const toObject = function (xmlContent) {
-    const resultObject = {};
-
-    xmlContent.replace(/<(.*)>([^]*)<\/\1>/gm, async (match, p1, p2) => {
-        try {
-            if (p2.match(/<(.*)>([^]*)<\/\1>/gm)) {
-                const child = toObject(p2);
-                resultObject[p1] = child;
-            } else {
-                resultObject[p1] = p2;
-            }
-
-        } catch (error) {
-            console.error(error);
-        }
-    });
-
-    return resultObject;
-}
-
 const toData = async function (contents) {
     try {
-        const dataArrayPromise = [];
+        const dataArray = [];
 
         contents.forEach(content => {
-            const dataPromise = toObject(content);
-            dataArrayPromise.push(dataPromise);
-        })
-
-        const objectArray = await Promise.all(dataArrayPromise);
-        return objectArray.map(value => JSON.stringify(value, undefined, 2))
+            dataArray.push(parser.toJson(content, { object: true, arrayNotation: false }));
+        });
+        
+        return dataArray;
     } catch (error) {
         console.error(error);
     }
@@ -149,7 +134,10 @@ if (args.includes("-d")) {
         .then(getContents)
         .then(toData)
         .then(result => {
-            toFile(result, FileType.DATA);
+            const stringResult = result.map(data => {
+                return JSON.stringify(data, undefined, 2);
+            });
+            toFile(stringResult, FileType.DATA);
         })
         .catch(console.error);
 }
